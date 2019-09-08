@@ -28,20 +28,22 @@ POSSIBILITY OF SUCH DAMAGE.
 
 import os
 import sys
+
 from pdfrw import PdfReader, PdfWriter, IndirectPdfDict
+
 
 """
 Append _clean to the filename
 """
-def getCleanFilename (base_filename):
+def get_clean_filename (base_filename):
     filename, file_extension = os.path.splitext(base_filename)
     return filename + '_clean' + file_extension
 
-"""
-Strip watermarks, prop page and write _clean file
-"""
-def processPDFFile(inputFilename):
 
+"""
+Strip watermarks, prop page and write clean file
+"""
+def process_pdf_file(inputFilename):
     try:
         print "Processing", inputFilename
         google_page_skipped = False
@@ -82,12 +84,12 @@ def processPDFFile(inputFilename):
 
         # Write the new file if cleanup was necessary
         if google_page_skipped or total_watermarks_skipped:
-            writer.write(getCleanFilename(inputFilename))
+            writer.write(get_clean_filename(inputFilename))
             if google_page_skipped:
                 print "  google prop page skipped"
             if total_watermarks_skipped:
                 print " ", total_watermarks_skipped, "page watermark references removed"
-            print "  _clean file written to", getCleanFilename(inputFilename)
+            print "  _clean file written to", get_clean_filename(inputFilename)
 
     except:
         pass
@@ -98,8 +100,8 @@ def main(root_path):
         for file in files:
             file_name, file_extension = os.path.splitext(file)
             if file_extension.lower() == '.pdf' and file.find('_clean') == -1 and \
-               not os.path.isfile(os.path.join(root, getCleanFilename(file))):
-                processPDFFile(os.path.join(root, file))
+               not os.path.isfile(os.path.join(root, get_clean_filename(file))):
+                process_pdf_file(os.path.join(root, file))
 
 
 if __name__ == "__main__":
