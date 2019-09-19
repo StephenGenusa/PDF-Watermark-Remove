@@ -45,7 +45,7 @@ Strip watermarks, prop page and write clean file
 """
 def process_pdf_file(inputFilename):
     try:
-        print "Processing", inputFilename
+        print ('Processing', inputFilename)
         google_page_skipped = False
         total_watermarks_skipped = 0
             
@@ -76,9 +76,7 @@ def process_pdf_file(inputFilename):
         if reader['/Info']:
             new_meta_dict = {}
             for info in reader['/Info']:
-                if '/Producer' in info:
-                    continue
-                else:
+                if '/Producer' not in info:
                     new_meta_dict[info] = reader['/Info'].get(info)
             writer.trailer.Info = IndirectPdfDict(new_meta_dict)    
 
@@ -86,10 +84,10 @@ def process_pdf_file(inputFilename):
         if google_page_skipped or total_watermarks_skipped:
             writer.write(get_clean_filename(inputFilename))
             if google_page_skipped:
-                print "  google prop page skipped"
+                print('  google prop page skipped')
             if total_watermarks_skipped:
-                print " ", total_watermarks_skipped, "page watermark references removed"
-            print "  _clean file written to", get_clean_filename(inputFilename)
+                print('  ', total_watermarks_skipped, 'page watermark references removed')
+            print('  _clean file written to', get_clean_filename(inputFilename))
 
     except:
         pass
@@ -104,12 +102,12 @@ def main(root_path):
                 process_pdf_file(os.path.join(root, file))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     if len(sys.argv) > 1:
         start_path = sys.argv[1]
     else:
-        start_path = "/Downloaded PDFs"
+        start_path = '/Downloaded PDFs'
     if os.path.exists(start_path):
         main(start_path)
     else:
-        print "Starting path", start_path, "not found"
+        print ('Starting path', start_path, 'not found')
