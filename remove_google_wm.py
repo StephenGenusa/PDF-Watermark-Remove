@@ -2,17 +2,13 @@
 
 """
 Copyright © 2019 by Stephen Genusa
-
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
-
 1. Redistributions of source code must retain the above copyright notice,
 this list of conditions and the following disclaimer.
-
 2. Redistributions in binary form must reproduce the above copyright notice,
 this list of conditions and the following disclaimer in the documentation
 and/or other materials provided with the distribution.
-
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -31,11 +27,12 @@ import sys
 
 from pdfrw import PdfReader, PdfWriter, IndirectPdfDict
 
-
 """
 Append _clean to the filename
 """
-def get_clean_filename (base_filename):
+
+
+def get_clean_filename(base_filename):
     filename, file_extension = os.path.splitext(base_filename)
     return filename + '_clean' + file_extension
 
@@ -43,54 +40,104 @@ def get_clean_filename (base_filename):
 """
 Strip watermarks, prop page and write clean file
 """
+
+
 def process_pdf_file(inputFilename):
     try:
         print ('Processing', inputFilename)
-        google_page_skipped = False
+        skip_this_page = False
         total_watermarks_skipped = 0
-            
+
         reader = PdfReader(inputFilename)
         writer = PdfWriter()
-        
-        # Determine if there's a google prop page
-        try:
-            google_intro_page = 'google' in reader.pages[0]['/Annots'][0]['/A']['/URI']
-        except:
-            google_intro_page = False
-        
-        # Do the page copy except for google prop
-        for index, page in enumerate(reader.pages):
-            # Dump the watermarks
+
+        for idx, page in enumerate(reader.pages):
+
+            skip_this_page = False
+            # Google
+            try:
+                skip_this_page = 'google' in page['/Annots'][0]['/A']['/URI']
+            except:
+                pass
+
+            # HathiTrust
+            # Looks like this may need another method for checking for the existence of the JxCBE
+            if not skip_this_page:
+                try:
+                    if idx == 0:
+                        skip_this_page = '/JxCBE' in page['/Resources']['/XObject']['/CLC']['/Resources']['/XObject']
+                except:
+                    pass
+            if not skip_this_page:
+                try:
+                    if idx == 0:
+                        skip_this_page = '/JxCBE' in page['/Resources']['/XObject']['/CCA']['/Resources']['/XObject']
+                except:
+                    pass
+
+            # Internet Archive / Microsoft
+            if not skip_this_page:
+                try:
+                    if idx == 2:
+                        skip_this_page = page['/Resources']['/XObject']['/Im001']['/Length'] == '8420'
+                except:
+                    pass
+
+
+            # Dump Google watermarks
             if '/Resources' in page and '/XObject' in page['/Resources'] and '/Wm' in page['/Resources']['/XObject']:
                 junk = page['/Resources']['/XObject'].pop('/Wm')
                 total_watermarks_skipped += 1
-             
+
+            for xobj in page['/Resources']['/XObject']:
+                if page['/Resources']['/XObject'][str(xobj)]['/Width'] == '156':
+                    junk = page['/Resources']['/XObject'].pop(str(xobj))
+                    total_watermarks_skipped += 1
+
+            # Dump HathiTrust watermarks
+            if '/Resources' in page and '/XObject' in page['/Resources'] and \
+               '/CBJ' in page['/Resources']['/XObject'] and \
+                '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
+                '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
+                '/PxCBA' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
+                    junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBA')
+                    total_watermarks_skipped += 1
+            if '/Resources' in page and '/XObject' in page['/Resources'] and \
+               '/CBJ' in page['/Resources']['/XObject'] and \
+                '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
+                '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
+                '/PxCBF' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
+                    junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBF')
+                    total_watermarks_skipped += 1
+            if '/Resources' in page and '/XObject' in page['/Resources'] and \
+               '/CBJ' in page['/Resources']['/XObject'] and \
+                '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
+                '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
+                '/PxCBG' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
+                    junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBG')
+                    total_watermarks_skipped += 1
+
             # Add the page unless it's the prop page
-            if (google_intro_page and index > 0) and page.Contents is not None:
+            if not skip_this_page and page.Contents is not None:
                 writer.addpage(page)
-            else:
-                if google_intro_page:
-                    google_page_skipped = True
-        
+
         # Copy and clean up the metadata
         if reader['/Info']:
             new_meta_dict = {}
             for info in reader['/Info']:
                 if '/Producer' not in info:
                     new_meta_dict[info] = reader['/Info'].get(info)
-            writer.trailer.Info = IndirectPdfDict(new_meta_dict)    
+            writer.trailer.Info = IndirectPdfDict(new_meta_dict)
 
-        # Write the new file if cleanup was necessary
-        if google_page_skipped or total_watermarks_skipped:
+            # Write the new file if cleanup was necessary
+        if total_watermarks_skipped or (len(reader.pages) != len(writer.pagearray)):
             writer.write(get_clean_filename(inputFilename))
-            if google_page_skipped:
-                print('  google prop page skipped')
             if total_watermarks_skipped:
                 print('  ', total_watermarks_skipped, 'page watermark references removed')
             print('  _clean file written to', get_clean_filename(inputFilename))
 
-    except:
-        pass
+    except Exception as e:
+        print(e)
 
 
 def main(root_path):
@@ -98,7 +145,7 @@ def main(root_path):
         for file in files:
             file_name, file_extension = os.path.splitext(file)
             if file_extension.lower() == '.pdf' and file.find('_clean') == -1 and \
-               not os.path.isfile(os.path.join(root, get_clean_filename(file))):
+                    not os.path.isfile(os.path.join(root, get_clean_filename(file))):
                 process_pdf_file(os.path.join(root, file))
 
 
