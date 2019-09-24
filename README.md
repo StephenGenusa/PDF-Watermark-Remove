@@ -1,6 +1,6 @@
 # Remove PDF Watermarks from Public Domain Books #
 
-This is a work in progress. Support for pubic domain books downloaded from:
+This is a work in progress. Support for public domain books downloaded from:
 
 - Google
 - HathiTrust
