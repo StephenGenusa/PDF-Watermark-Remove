@@ -24,129 +24,164 @@ POSSIBILITY OF SUCH DAMAGE.
 
 import os
 import sys
+import operator
 
 from pdfrw import PdfReader, PdfWriter, IndirectPdfDict
-
-"""
-Append _clean to the filename
-"""
-
-
-def get_clean_filename(base_filename):
-    filename, file_extension = os.path.splitext(base_filename)
-    return filename + '_clean' + file_extension
 
 
 """
 Strip watermarks, prop page and write clean file
 """
-
-
 def process_pdf_file(inputFilename):
+
     try:
-        print ('Processing', inputFilename)
+        print (f'Checking {inputFilename}')
         skip_this_page = False
         total_watermarks_skipped = 0
 
-        reader = PdfReader(inputFilename)
-        writer = PdfWriter()
+        try:
+            reader = PdfReader(inputFilename)
+        except:
+            pass
+        else:
+            writer = PdfWriter()
 
-        for idx, page in enumerate(reader.pages):
+            wm_width = 0
+            page_count = 0
+            counts = dict()
+            sample_pages = []
 
-            skip_this_page = False
-            # Google
-            try:
-                skip_this_page = 'google' in page['/Annots'][0]['/A']['/URI']
-            except:
-                pass
+            # Look through all pages for a potential primary watermark item
+            if reader is not None:
+                for idx, page in enumerate(reader.pages):
+                    if '/Resources' in page and '/XObject' in page['/Resources']:
+                        for xobj in page['/Resources']['/XObject']:
+                            # Warning: Masks may or may not indicate WM presence
+                            if '/Mask' in page['/Resources']['/XObject'][str(xobj)]:
+                                if '/Width' in page['/Resources']['/XObject'][str(xobj)]:
+                                    cur_width = int(page['/Resources']['/XObject'][str(xobj)]['/Width'])
+                                    counts[cur_width] = counts.get(cur_width, 0) + 1
+                                    sample_pages.append(idx+1)
+                    page_count += 1
+                if counts:
+                    wm_width = max(counts, key=lambda key: counts[key])
+                    if counts[wm_width] != page_count and len(counts) < 4:
+                        print('*' * 40)
+                        print(f'* Potential watermarks found but only occurs in {counts[wm_width]} of {page_count} pages')
+                        print(f'* Sample pages: {sample_pages[0:9]}')
+                        counts = sorted(counts.items(), reverse=True, key=lambda x: x[1])
+                        print(f'* {counts}')
+                        print('*' * 40)
+                        wm_width = 0
 
-            # HathiTrust
-            # Looks like this may need another method for checking for the existence of the JxCBE
-            if not skip_this_page:
-                try:
-                    if idx == 0:
-                        skip_this_page = '/JxCBE' in page['/Resources']['/XObject']['/CLC']['/Resources']['/XObject']
-                except:
-                    pass
-            if not skip_this_page:
-                try:
-                    if idx == 0:
-                        skip_this_page = '/JxCBE' in page['/Resources']['/XObject']['/CCA']['/Resources']['/XObject']
-                except:
-                    pass
+                # Process all pages removing prop pages and watermark objects
+                for idx, page in enumerate(reader.pages):
+                    skip_this_page = False
 
-            # Internet Archive / Microsoft
-            if not skip_this_page:
-                try:
-                    if idx == 2:
-                        skip_this_page = page['/Resources']['/XObject']['/Im001']['/Length'] == '8420'
-                except:
-                    pass
+                    # ************** Prop Pages **************
+                    # Google
+                    try:
+                        skip_this_page = 'google' in page['/Annots'][0]['/A']['/URI']
+                    except:
+                        pass
 
+                    # HathiTrust
+                    # Looks like this may need another method for checking for the existence of the JxCBE
+                    if not skip_this_page:
+                        try:
+                            if idx == 0:
+                                skip_this_page = '/JxCBE' in page['/Resources']['/XObject']['/CLC']['/Resources']['/XObject']
+                        except:
+                            pass
+                    if not skip_this_page:
+                        try:
+                            if idx == 0:
+                                skip_this_page = '/JxCBE' in page['/Resources']['/XObject']['/CCA']['/Resources']['/XObject']
+                        except:
+                            pass
 
-            # Dump Google watermarks
-            if '/Resources' in page and '/XObject' in page['/Resources'] and '/Wm' in page['/Resources']['/XObject']:
-                junk = page['/Resources']['/XObject'].pop('/Wm')
-                total_watermarks_skipped += 1
+                    # Internet Archive / Microsoft
+                    if not skip_this_page:
+                        try:
+                            if idx == 2:
+                                skip_this_page = page['/Resources']['/XObject']['/Im001']['/Length'] == '8420'
+                        except:
+                            pass
 
-            for xobj in page['/Resources']['/XObject']:
-                if page['/Resources']['/XObject'][str(xobj)]['/Width'] == '156':
-                    junk = page['/Resources']['/XObject'].pop(str(xobj))
-                    total_watermarks_skipped += 1
+                    # ************** Watermarks **************
+                    # Dump Google watermarks
+                    if '/Resources' in page and '/XObject' in page['/Resources'] and '/Wm' in page['/Resources']['/XObject']:
+                        junk = page['/Resources']['/XObject'].pop('/Wm')
+                        total_watermarks_skipped += 1
+                    if '/Resources' in page and '/XObject' in page['/Resources']:
+                        for xobj in page['/Resources']['/XObject']:
+                            if '/Mask' in page['/Resources']['/XObject'][str(xobj)]:
+                                if '/Width' in page['/Resources']['/XObject'][str(xobj)]:
+                                    cur_width = int(page['/Resources']['/XObject'][str(xobj)]['/Width'])
+                                    if cur_width == wm_width:
+                                        junk = page['/Resources']['/XObject'].pop(str(xobj))
+                                        total_watermarks_skipped += 1
+                        for xobj in page['/Resources']['/XObject']:
+                            if page['/Resources']['/XObject'][str(xobj)]['/Width'] == '156':
+                                junk = page['/Resources']['/XObject'].pop(str(xobj))
+                                total_watermarks_skipped += 1
 
-            # Dump HathiTrust watermarks
-            if '/Resources' in page and '/XObject' in page['/Resources'] and \
-               '/CBJ' in page['/Resources']['/XObject'] and \
-                '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
-                '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
-                '/PxCBA' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
-                    junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBA')
-                    total_watermarks_skipped += 1
-            if '/Resources' in page and '/XObject' in page['/Resources'] and \
-               '/CBJ' in page['/Resources']['/XObject'] and \
-                '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
-                '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
-                '/PxCBF' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
-                    junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBF')
-                    total_watermarks_skipped += 1
-            if '/Resources' in page and '/XObject' in page['/Resources'] and \
-               '/CBJ' in page['/Resources']['/XObject'] and \
-                '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
-                '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
-                '/PxCBG' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
-                    junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBG')
-                    total_watermarks_skipped += 1
+                    # Dump HathiTrust watermarks
+                    if '/Resources' in page and '/XObject' in page['/Resources'] and \
+                       '/CBJ' in page['/Resources']['/XObject'] and \
+                        '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
+                        '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
+                        '/PxCBA' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
+                            junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBA')
+                            total_watermarks_skipped += 1
+                    if '/Resources' in page and '/XObject' in page['/Resources'] and \
+                       '/CBJ' in page['/Resources']['/XObject'] and \
+                        '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
+                        '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
+                        '/PxCBF' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
+                            junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBF')
+                            total_watermarks_skipped += 1
+                    if '/Resources' in page and '/XObject' in page['/Resources'] and \
+                       '/CBJ' in page['/Resources']['/XObject'] and \
+                        '/Resources' in page['/Resources']['/XObject']['/CBJ'] and \
+                        '/XObject' in page['/Resources']['/XObject']['/CBJ']['/Resources'] and \
+                        '/PxCBG' in page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject']:
+                            junk = page['/Resources']['/XObject']['/CBJ']['/Resources']['/XObject'].pop('/PxCBG')
+                            total_watermarks_skipped += 1
 
-            # Add the page unless it's the prop page
-            if not skip_this_page and page.Contents is not None:
-                writer.addpage(page)
+                    # Add the page unless it's the prop page
+                    if not skip_this_page and page.Contents is not None:
+                        writer.addpage(page)
 
-        # Copy and clean up the metadata
-        if reader['/Info']:
-            new_meta_dict = {}
-            for info in reader['/Info']:
-                if '/Producer' not in info:
-                    new_meta_dict[info] = reader['/Info'].get(info)
-            writer.trailer.Info = IndirectPdfDict(new_meta_dict)
+                # Copy and clean up the metadata
+                if reader['/Info']:
+                    new_meta_dict = {}
+                    for info in reader['/Info']:
+                        if '/Producer' not in info:
+                            new_meta_dict[info] = reader['/Info'].get(info)
+                    writer.trailer.Info = IndirectPdfDict(new_meta_dict)
 
-            # Write the new file if cleanup was necessary
-        if total_watermarks_skipped or (len(reader.pages) != len(writer.pagearray)):
-            writer.write(get_clean_filename(inputFilename))
-            if total_watermarks_skipped:
-                print('  ', total_watermarks_skipped, 'page watermark references removed')
-            print('  _clean file written to', get_clean_filename(inputFilename))
+                # Write the new file if cleanup was necessary
+                if total_watermarks_skipped or (len(reader.pages) != len(writer.pagearray)):
+                    filename, file_extension = os.path.splitext(inputFilename)
+                    os.rename(inputFilename, filename + '.bak')
+                    writer.write(inputFilename)
+                    if len(reader.pages) != len(writer.pagearray):
+                        print(f'  {len(reader.pages) - len(writer.pagearray)} pages deleted', )
+                    if total_watermarks_skipped:
+                        print(f'  {total_watermarks_skipped} page watermark references removed')
+                    print(f'  Clean file written to {inputFilename}')
 
     except Exception as e:
-        print(e)
+        print('Exception: ', e)
 
 
 def main(root_path):
     for root, dirs, files in os.walk(root_path):
-        for file in files:
-            file_name, file_extension = os.path.splitext(file)
-            if file_extension.lower() == '.pdf' and file.find('_clean') == -1 and \
-                    not os.path.isfile(os.path.join(root, get_clean_filename(file))):
-                process_pdf_file(os.path.join(root, file))
+        for filename in files:
+            file_name, file_extension = os.path.splitext(filename)
+            if file_extension.lower() == '.pdf':
+                process_pdf_file(os.path.join(root, filename))
 
 
 if __name__ == '__main__':
