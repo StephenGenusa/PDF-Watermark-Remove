@@ -110,4 +110,4 @@ PDFs in `./Books`.
 
 ## License
 
-BSD 2-Clause. See [LICENSE.txt](LICENSE.txt).
+MIT. See [LICENSE.txt](LICENSE.txt).
