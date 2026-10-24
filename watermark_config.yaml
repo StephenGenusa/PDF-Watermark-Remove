@@ -1,0 +1,186 @@
+# watermark_config.yaml
+# Configuration for PDF watermark and promotional page removal
+
+services:
+  google:
+    # A file is treated as a Google Books PDF if any of these match
+    identify:
+      producer_prefixes:
+        - "Google Books PDF Converter"
+      link_domains:
+        - "books.google."            # also catches books.google.co.uk, etc.
+
+    # Promotional pages: the notice/cover page Google adds
+    promotional_pages:
+      search_pages: {first: 2, last: 2}  # only these pages are ever candidates
+      min_signals: 2                 # independent signals that must agree to delete a page
+      signals:
+        link_domains:
+          - "books.google."
+        image_names:
+          - "/FM:pod:QRCode"
+        no_watermark: true           # page lacks the watermark that body pages carry
+        text_patterns:               # matched after collapsing whitespace, case-insensitive
+          - "digitized by google"
+          - "google is proud to partner with"
+          - "this is a digital copy of a book"
+          - "this is a reproduction of a library book"
+          - "books.google.com"
+
+    # Watermark signatures: every listed check must pass for an XObject to be removed
+    watermarks:
+      xobjects:
+        - name: "/Wm"                # verified on Google Books PDF Converter rel 3 files
+          subtype: "/Image"
+          bits_per_component: 1
+          height: 204                # width varies (1034, 982)
+          requires_stencil_mask: true
+          min_page_ratio: 0.9        # same shared object drawn on >= 90% of pages
+          max_page_area_ratio: 0.05  # each placement covers <= 5% of the page
+        - name: "/Form0"             # source not yet known; looser checks
+          min_page_ratio: 0.9
+          max_page_area_ratio: 0.05
+      color_mappings:       # Typical overlay colors (RGB)
+        light_gray: [0.9, 0.9, 0.9]
+        mid_gray: [0.7, 0.7, 0.7]
+
+  hathitrust:
+    # A file is treated as a HathiTrust PDF if any of these match (verified on
+    # "I appeal unto Caesar", Producer "HathiTrust Image Server / PDF::API2"),
+    # or if the nested watermark keys below are present.
+    identify:
+      producer_prefixes:
+        - "HathiTrust"
+      link_domains:
+        - "hathitrust.org"
+        - "hdl.handle.net/2027/"   # HathiTrust's handle prefix
+
+    # Promotional pages: the notice page HathiTrust adds at the front
+    promotional_pages:
+      search_pages: {first: 2, last: 2}
+      min_signals: 2
+      signals:
+        link_domains:
+          - "hathitrust.org"
+          - "hdl.handle.net/2027/"
+        text_patterns:             # matched after collapsing whitespace, case-insensitive
+          - "generated through hathitrust"
+          - "find this book online"
+          - "public domain in the united states"
+          - "we have determined this work to be in the public domain"
+
+    # HathiTrust-specific watermark patterns
+    watermarks:
+      nested_xobject_path: "/CBJ/Resources/XObject"  # Signature nesting structure
+      watermark_keys:
+        - "/PxCBA"           # Top-left watermark variant
+        - "/PxCBB"           # verified: bottom-right footer ("Original from ...")
+        - "/PxCBC"           # verified: left-margin strip ("Generated through HathiTrust ...")
+        - "/PxCBF"           # Bottom-right variant
+        - "/PxCBG"           # Center variant for books
+      position_indicators:   # Common bounding boxes
+        - [0, 0, 120, 30]    # Top-left corner
+        - [480, 700, 600, 730]  # Bottom-right corner
+
+  internet_archive:
+    # IA-specific promotional pages and watermarks
+    promotional_pages:
+      anchor_page: 2        # Typically page 3 (0-indexed)
+      xobject_signature: "/Im001"  # Cover page image marker
+      signature_length: 8420      # Known promotional image size
+      search_pages: {first: 4, last: 2}  # anchor_page must fall inside this window
+      min_signals: 2              # signals that must agree: text_signatures, xobject_signature
+      text_signatures:
+        - "digitized by the internet archive"
+        - "archive.org"
+
+    watermarks:
+      text_patterns:
+        - "digital library"
+        - "public domain"
+      opacity_range: [0.3, 0.6]   # Typical IA watermark opacity
+      diagonal_orientation: true    # Most IA watermarks are diagonal
+
+# Hard safety limits, enforced for every file
+safety:
+  max_image_page_area_ratio: 0.5   # never treat an image covering >50% of a page as a watermark
+  protect_largest_image: true      # never remove a page's largest image
+  max_promo_pages: 2               # more candidate promo pages than this fails the file
+  fail_on_blank_page: true         # a page going from ink to blank fails the file
+  render_dpi: 36                   # resolution of the before/after page comparison
+  max_render_diff: 2.0             # max mean pixel difference (0-255) outside removed watermarks
+
+# General watermark detection settings
+general:
+  # Visual watermark characteristics
+  watermark_coverage_ratio: 0.4     # Min 40% page coverage to be considered
+  transparency_threshold: 0.2       # Below this = fully opaque
+
+  # Text watermark patterns (OCR detection)
+  text_signatures:
+    - "confidential"
+    - "sample"
+    - "draft"
+    - "internal use"
+    - "do not copy"
+
+  # Fallback rules for files that are not Google Books PDFs (HathiTrust, IA, other).
+  # Every candidate must still pass the safety limits and output validation.
+  generic_rules:
+    frequent_width_ratio: 0.8         # an image width drawn on >= 80% of pages
+    fixed_widths: [156, 720, 1034]    # known watermark widths
+    transparency_groups: true         # Form XObjects with a transparency group
+    xobject_names: ["/Wm", "/Form0"]  # names alone, as the original code matched on every file
+    ocg_names: ["Watermark"]          # images inside a form on an optional-content layer with this name
+
+  # Structural detection parameters
+  bounding_box_rules:
+    full_page:                        # Covers entire page
+      width_ratio: [0.95, 1.05]      # 95-105% of page width
+      height_ratio: [0.95, 1.05]     # 95-105% of page height
+    corner_overlay:                   # Corner placement
+      corner: "top-right"
+      max_area_percent: 15            # Max 15% of page area
+
+  # Removal safety constraints
+  max_removal_percentage: 15         # Warn if >15% content removed
+  required_confirmation: true         # Interactive prompt before major changes
+
+# Processing behavior flags
+processing:
+  # Fallback methods when primary techniques fail
+  enable_ocr_fallback: true          # Use OCR for image watermarks
+  ocr_dpi: 200                       # page render resolution for Tesseract (pages without a text layer)
+  ocr_min_confidence: 60             # ignore Tesseract words below this confidence (0-100)
+  stamp_min_page_ratio: 0.5          # a phrase must appear on >= 50% of pages to be removed
+  max_stamp_page_area_ratio: 0.1     # a stamp's box must cover <= 10% of the page
+  inpaint_radius: 3                  # cv2.inpaint neighbourhood radius in pixels
+  trim_vacated_margins: true         # crop away blank strips left where removed watermarks sat
+  max_trim_margin_ratio: 0.1         # never trim a margin wider than 10% of the page
+  allow_rasterization: false         # Default false to preserve text
+  aggressive_cleanup: false          # Set true for corrupted PDFs
+
+  # Performance tuning
+  batch_parallel_workers: 4          # Number of parallel processes
+  memory_limit_mb: 2048             # RAM ceiling during processing
+
+  # Output handling
+  include_removal_report: true      # Generate changes summary
+  pdf_version_compatibility: "1.7"   # Target PDF standard
+
+# Validation signatures (PDF integrity checks)
+validation:
+  # Required objects after cleanup
+  must_contain:
+    - "/Root/Pages"
+    - "/Root/Version"
+
+  # Forbidden objects in clean output
+  must_not_contain:
+    - "/Watermark"
+    - "/Artifact << /Subtype /Watermark"
+    - "/OCProperties"                # Watermark layer groups
+
+  # Sanity checks
+  min_pages: 1                      # At least 1 page required
+  max_ratio_decrease: 0.3           # Max 30% file size reduction

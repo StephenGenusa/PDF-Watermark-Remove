@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Leftover staging files from an interrupted run
+*.stage1.tmp
+*.stage2.tmp
+
+# IDE
+.idea/
+.vscode/
+
+# Local PDF corpus (copyrighted scans, ~900 MB) and cleaned output
+Books/
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db
