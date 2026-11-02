@@ -28,6 +28,9 @@ coverage.xml
 Books/
 *.pdf
 
+# Local helper scripts
+utilities/
+
 # OS
 .DS_Store
 Thumbs.db

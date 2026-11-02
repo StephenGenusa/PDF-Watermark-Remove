@@ -3,6 +3,8 @@
 Removes the wrapper pages and watermarks that digitization services add to public
 domain book scans, while leaving the scanned pages themselves untouched.
 
+![Before and after: watermarks removed from real Google Books and HathiTrust pages](docs/watermark_removal.gif)
+
 Supported sources:
 
 - **Google Books**: the "Digitized by Google" notice page and the small `/Wm`
